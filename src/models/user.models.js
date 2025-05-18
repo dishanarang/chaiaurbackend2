@@ -51,7 +51,7 @@ const userSchema=new Schema(
 //next() [a flag type of thing] is used to go from one middleware to another
 userSchema.pre("save", async function(next){
     if(!this.isModified("password")) return next();
-    this.password=bcrypt.hash(this.password,10)
+    this.password=await bcrypt.hash(this.password,10)
     next()
 })
 //to check if password is correct or not
