@@ -230,9 +230,120 @@ const refreshAccessToken=asyncHandler(async(req,res)=>{
     }
 })
 
+const changeCurrentPassword=asyncHandler(async(req,res)=>{
+    const{oldPassword, newPassword, confirmPassword}=req.body
+    //req.user is there since before running this we are going to use verifyJWT middleware, since a loggedin User can only change their password
+    const user=await User.findById(req.user?._id)
+    const isPasswordCorrect=await user.isPasswordCorrect(oldPassword)
+    if(!isPasswordCorrect){
+        throw new ApiError(400,"invalid old password")
+    }
+    if(newPassword!==confirmPassword){
+        throw new ApiError(400, "New password and confirm password don't match")
+    }
+    user.password=newPassword
+    await user.save({validateBeforeSave:false})
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200,{},"Password Changed Successfully"))
+})
+
+const getCurrentUser=asyncHandler(async(req,res)=>{
+    //since user is logged in , we have req.user(injected by verifyJWT middleware)
+    const user=await User.findById(req.user?._id)
+    return res
+    .status(200)
+    .json(200, user, "current user fetched susscessfully")
+})  
+
+const updateAccountDetails=asyncHandler(async(req,res)=>{
+    const{fullName,email}=req.body
+    if(!fullName || !email){
+        throw new ApiError(400, "All fields are required")
+    }
+    const user=await User.findByIdAndUpdate(
+        req.user?._id,
+        {
+            $set:{
+                fullName:fullName,
+                email:email
+            }
+        },
+        {new:true}
+        
+    ).select("-password")
+
+    return res
+    .status(200)
+    .json(new ApiResponse(200, user, "account details updated successfully"))
+})
+
+const updateUserAvatar=asyncHandler(async(req,res)=>{
+   const avatarLocalPath= req.file?.path
+   if(!avatarLocalPath){
+    throw new ApiError(400,"Avatar file is missing")
+   }
+   const avatar=await uploadOnCloudinary(avatarLocalPath)
+
+   if(!avatar.url){
+    throw new ApiError(400,"Error while uploading on cloudinary")
+   }
+   //now only logged in user can update avatar, therefore we must have used our middeware verifyJWT, so req.user is injected. 
+   const user=await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+        $set:{
+            avatar:avatar.url
+        }
+    },
+    {new:true}
+   ).select("-password");
+
+   return res
+   .status(200)
+   .json(
+    new ApiResponse(200,user,"Avatar updated successfully")
+   )
+
+
+})
+
+const updateUserCoverImage=asyncHandler(async(req,res)=>{
+   const coverImageLocalPath= req.file?.path
+   if(!coverImageLocalPath){
+    throw new ApiError(400,"conver image file is missing")
+   }
+   const coverImage=await uploadOnCloudinary(coverImageLocalPath)
+
+   if(!coverImage.url){
+    throw new ApiError(400,"Error while uploading on cloudinary")
+   }
+   //now only logged in user can update coverImage, therefore we must have used our middeware verifyJWT, so req.user is injected. 
+   const user=await User.findByIdAndUpdate(
+    req.user?._id,
+    {
+        $set:{
+            coverImage:coverImage.url
+        }
+    },
+    {new:true}
+   ).select("-password");
+
+   return res
+   .status(200)
+   .json(
+    new ApiResponse(200,user,"Cover Image updated successfully")
+   )
+})
 export {
     registerUser,
     loginUser,
     logoutUser,
-    refreshAccessToken
+    refreshAccessToken,
+    changeCurrentPassword,
+    getCurrentUser,
+    updateAccountDetails,
+    updateUserAvatar,
+    updateUserCoverImage
 }
