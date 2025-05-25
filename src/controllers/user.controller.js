@@ -249,12 +249,12 @@ const changeCurrentPassword=asyncHandler(async(req,res)=>{
     .json(new ApiResponse(200,{},"Password Changed Successfully"))
 })
 
-const getCurrentUser=asyncHandler(async(req,res)=>{
+const getCurrentUser=asyncHandler(async(req,res)=>{ 
     //since user is logged in , we have req.user(injected by verifyJWT middleware)
     const user=await User.findById(req.user?._id)
     return res
     .status(200)
-    .json(200, user, "current user fetched susscessfully")
+    .json(new ApiResponse(200, user, "current user fetched susscessfully"))
 })  
 
 const updateAccountDetails=asyncHandler(async(req,res)=>{
@@ -336,6 +336,147 @@ const updateUserCoverImage=asyncHandler(async(req,res)=>{
     new ApiResponse(200,user,"Cover Image updated successfully")
    )
 })
+
+//using aggregation pipelines here for the first time
+const getUserChannelProfile=asyncHandler(async(req,res)=>{
+    //in order to get a profile you go to their profile page route, so url has the username
+    const {username}=req.params; //to get stuff from the url we use req.params
+
+    if(!username?.trim()){
+        throw new ApiError(400, "username is missing")
+    }
+
+    const channel=await User.aggregate([
+        {
+            //this pipeline helps us get one document with username as given in the url
+            $match:{
+                username:username?.toLowerCase()
+            }
+        },
+
+        //suppose the above pipeline gives us a user with username 'chaiaurcode'
+        //now we will find ki chaiaurcode ke subscribers kitne hai
+
+        {
+             $lookup:{
+                //this is the Subscription model, but in DB name gets stored as subscriptions
+                from:"subscriptions",
+                localField:"_id",
+                foreignField:"channel",
+                as:"subscribers"
+             }
+        },
+
+        {
+             $lookup:{
+                from:"subscriptions",
+                localField:"_id",
+                foreignField:"subscriber",
+                as:"subscribedTo"
+             }
+        },
+        {
+            $addFields:{
+                subscribersCount:{
+                    $size:"$subscribers"
+                },
+                channelsSubscriberToCount:{
+                    $size:"$subscribedTo"
+                },
+                isSubscriber:{
+                    $cond:{
+                        if: {$in:[req.user?._id, "$subscribers.subscriber"]}, 
+                        then:true,
+                        else:false
+                    }
+                }
+            }
+        },
+        //project ->projection of selected values
+        {
+            fullName:1,
+            username:1,
+            subscribersCount:1,
+            channelsSubscriberToCount:1,
+            isSubscriber:1,
+            avatar:1,
+            email:1,
+            coverImage:1
+        }
+    ])
+
+    if(!channel?.length){
+        throw new ApiError(404,"channel does not exist")
+    }
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200,channel[0],"User channel fetched successfully")
+    )
+})
+
+//we will use a nested lookup
+//we got on one user who's watch history we wanna see
+//so in that we first get a user document
+//then we do a lookup into the video model, in that we have owner field
+//so for the owner field we need to do a nested lookup into the user documents
+const getWatchHistory=asyncHandler(async(req,res)=>{
+    const user= await User.aggregate([
+        {
+            $match:{
+                _id: new mongoose.Types.ObjectId(req.user._id)
+            }
+
+        },
+        {
+            $lookup:{
+                from:"videos",
+                localField: "watchHistory",
+                foreignField:"_id",
+                as:"watchHistory",
+                pipeline:[
+                    {
+                       $lookup:{
+                        from:"users",
+                        localField:"owner",
+                        foreignField:"_id",
+                        as : "owner",
+                        pipeline:[
+                            {
+                                $project:{
+                                    fullName:1,
+                                    username:1,
+                                    avatar:1
+                                }
+                            }
+                        ]
+                       }
+                    },
+                    {
+                        $addFields:{
+                            owner:{
+                                $first:"$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            user[0].watchHistory,
+            "watch history fecthed successully"
+        )
+    )
+})
+
+
+
 export {
     registerUser,
     loginUser,
@@ -345,5 +486,7 @@ export {
     getCurrentUser,
     updateAccountDetails,
     updateUserAvatar,
-    updateUserCoverImage
-}
+    updateUserCoverImage,
+    getUserChannelProfile,
+    getWatchHistory
+} 
